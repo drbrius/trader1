@@ -4,7 +4,7 @@
  * Serves the React frontend and a small REST API:
  *   GET  /api/health                  liveness probe
  *   GET  /api/pricing                 plans, prices and free-trial size
- *   GET  /api/economics               unit economics (owner view)
+ *   GET  /api/economics               unit economics (operator only, ADMIN_TOKEN)
  *   GET  /api/quota                   remaining analyses for this browser
  *   POST /api/analyze                 the actual chart analysis
  *   POST /api/subscription/checkout   start a Stripe Checkout session
@@ -83,10 +83,19 @@ async function startServer() {
   });
 
   /**
-   * Margin transparency for the operator: shows that every plan clears the
-   * required profit per subscriber per month.
+   * Margin transparency for the OPERATOR ONLY — never for customers.
+   *
+   * Requires ADMIN_TOKEN to be set and sent as x-admin-token. Without the env
+   * var the route does not exist at all, so an unconfigured deployment cannot
+   * leak the business figures.
    */
   app.get('/api/economics', (req, res) => {
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (!adminToken || req.header('x-admin-token') !== adminToken) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
     const subscribers = Number(req.query.subscribers);
     const economics = allUnitEconomics(
       Number.isFinite(subscribers) && subscribers > 0 ? Math.floor(subscribers) : undefined,

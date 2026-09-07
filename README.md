@@ -63,12 +63,17 @@ Wichtige Punkte dieser Rechnung:
 - **Bereits ein einziges Abo trägt das Ziel**, sobald die Infrastruktur bezahlt ist — mit
   10 Abos liegt der Gesamtgewinn bei rund 163 CHF pro Monat.
 
-Live nachrechnen:
+Live nachrechnen — die Route ist **nur für dich** und antwortet ohne gültiges
+`ADMIN_TOKEN` mit 404, damit deine Zahlen nie öffentlich sind:
 
 ```bash
-curl http://localhost:3000/api/economics                 # Basis: 10 Abonnenten
-curl "http://localhost:3000/api/economics?subscribers=50"
+# in .env: ADMIN_TOKEN="ein-langes-zufaelliges-token"
+curl -H "x-admin-token: $ADMIN_TOKEN" http://localhost:3000/api/economics
+curl -H "x-admin-token: $ADMIN_TOKEN" "http://localhost:3000/api/economics?subscribers=50"
 ```
+
+Die Margenrechnung erscheint bewusst **nirgends auf der Website** — weder im
+Kundenbereich noch im Seitenquelltext.
 
 Die Kostenannahmen (Wechselkurs, Token-Preise, Stripe-Gebühren, Infrastruktur) stehen
 gesammelt in `COST_MODEL` in `server/pricing.ts` und lassen sich dort an die echten Zahlen
@@ -130,7 +135,7 @@ src/lib/                  API-Client, Client-ID, lokaler Verlauf
 | --- | --- | --- |
 | `GET` | `/api/health` | Statusprüfung, zeigt ob KI und Stripe konfiguriert sind |
 | `GET` | `/api/pricing` | Pläne und Preise |
-| `GET` | `/api/economics` | Margenrechnung (Betreiber-Sicht) |
+| `GET` | `/api/economics` | Margenrechnung — nur mit `ADMIN_TOKEN`, sonst 404 |
 | `GET` | `/api/quota` | Verbleibende Analysen dieses Browsers |
 | `POST` | `/api/analyze` | Chart-Analyse |
 | `POST` | `/api/subscription/checkout` | Stripe-Checkout starten |
@@ -164,7 +169,8 @@ NODE_ENV=production PORT=8080 npm start
 ```
 
 Nötige Umgebungsvariablen in der Produktion: `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`,
-`STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`, `APP_URL`.
+`STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`, `APP_URL` — dazu `ADMIN_TOKEN`,
+wenn du die Margen-Route nutzen willst.
 
 Beachte den Punkt zum dateibasierten Speicher oben: auf Cloud Run oder ähnlichen
 Plattformen mit flüchtigem Dateisystem gehen Abo-Daten beim Neustart verloren. Vor dem
