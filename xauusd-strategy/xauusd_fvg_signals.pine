@@ -1,0 +1,260 @@
+//@version=5
+// XAU/USD 15-minute fair-value-gap retest signals with a 1-10 confluence rating.
+// Use on a XAUUSD 15-minute chart. Hover a BUY label to see its checklist. Not financial advice.
+//
+// Setup: a bullish FVG (candle 3 low above candle 1 high, gap >= 0.25 ATR) is retested for the
+// first time within 48 candles and the retest candle closes bullish ABOVE the gap.
+// Rating = 2 + 2 x checks passed: higher-timeframe trend, local trend, at support, at $10 round number.
+// Backtest (Jun 2025 - Oct 2026, $0.30/oz cost, 1:1.5): rating 6+ won 48-49 % at +0.11R to +0.19R per
+// trade; rating 2-4 lost. 6, 8 and 10 did not differ reliably. Sell signals were NOT validated.
+strategy("XAUUSD 15m FVG Retest (rated)", overlay=true, pyramiding=0,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     max_labels_count=500, max_boxes_count=300, max_lines_count=200)
+
+minGap     = input.float(0.25, "Min gap size (x ATR)", minval=0.05, step=0.05)
+maxAge     = input.int(48, "Gap valid for (candles)", minval=5)
+rr         = input.float(1.5, "Target (x risk)", minval=0.5, step=0.25)
+minRating  = input.int(6, "Min rating to trade / alert", minval=2, maxval=10, step=2)
+maxBars    = input.int(24, "Close trade after (candles)", minval=1)
+showSells  = input.bool(false, "Show and trade SELL signals (not validated)")
+showZones  = input.bool(true, "Draw fair value gaps")
+showLevels = input.bool(false, "Draw support/resistance pivots")
+
+a      = ta.atr(14)
+tol    = 0.3 * a
+ema50  = ta.ema(close, 50)
+emaHtf = ta.ema(close, 200)   // ~EMA50 of the 1H chart when used on 15m
+barsPerDay = math.round(86400 / timeframe.in_seconds())
+
+plot(emaHtf, "Higher-timeframe trend (EMA200)", color=color.new(color.orange, 0), linewidth=2)
+plot(ema50, "Local trend (EMA50)", color=color.new(color.gray, 30))
+
+// ------------------------------------------------------------ support / resistance: swing pivots of the last 24h
+var float[] lvlPx  = array.new_float()
+var int[]   lvlBar = array.new_int()
+ph = ta.pivothigh(high, 5, 5)
+pl = ta.pivotlow(low, 5, 5)
+if not na(ph)
+    array.push(lvlPx, ph)
+    array.push(lvlBar, bar_index)
+    if showLevels
+        line.new(bar_index - 5, ph, bar_index + 10, ph, color=color.new(color.red, 50), style=line.style_dotted)
+if not na(pl)
+    array.push(lvlPx, pl)
+    array.push(lvlBar, bar_index)
+    if showLevels
+        line.new(bar_index - 5, pl, bar_index + 10, pl, color=color.new(color.green, 50), style=line.style_dotted)
+while array.size(lvlBar) > 0 and bar_index - array.get(lvlBar, 0) > barsPerDay
+    array.shift(lvlBar)
+    array.shift(lvlPx)
+
+float supTop = na
+float resBot = na
+float nextUp = na
+float nextDn = na
+nLvl = array.size(lvlPx)
+if nLvl > 0
+    for k = 0 to nLvl - 1
+        v = array.get(lvlPx, k)
+        if v <= close + tol and low <= v + tol
+            supTop := na(supTop) ? v : math.max(supTop, v)
+        if v >= close - tol and high >= v - tol
+            resBot := na(resBot) ? v : math.min(resBot, v)
+        if v > close + tol
+            nextUp := na(nextUp) ? v : math.min(nextUp, v)
+        if v < close - tol
+            nextDn := na(nextDn) ? v : math.max(nextDn, v)
+int supStrength = 0
+int resStrength = 0
+if nLvl > 0
+    for k = 0 to nLvl - 1
+        v = array.get(lvlPx, k)
+        if not na(supTop) and math.abs(v - supTop) <= tol
+            supStrength += 1
+        if not na(resBot) and math.abs(v - resBot) <= tol
+            resStrength += 1
+atSup = not na(supTop)
+atRes = not na(resBot)
+
+rl = math.round(low / 10) * 10
+rh = math.round(high / 10) * 10
+roundSup = math.abs(low - rl) <= tol and rl <= close + tol
+roundRes = math.abs(high - rh) <= tol and rh >= close - tol
+
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+nearPdl = math.abs(low - pdl) <= tol or (low < pdl and close > pdl)
+nearPdh = math.abs(high - pdh) <= tol or (high > pdh and close < pdh)
+
+relVol = volume / ta.sma(volume, 20)
+utcMins = hour(time, "UTC") * 60 + minute(time, "UTC")
+goodSession = utcMins >= 420 and utcMins < 990
+
+// ------------------------------------------------------------ fair value gaps
+var float[] bBot = array.new_float()
+var float[] bTop = array.new_float()
+var int[]   bBar = array.new_int()
+var bool[]  bHit = array.new_bool()
+var box[]   bBox = array.new_box()
+var float[] sBot = array.new_float()
+var float[] sTop = array.new_float()
+var int[]   sBar = array.new_int()
+var bool[]  sHit = array.new_bool()
+var box[]   sBox = array.new_box()
+
+bool retestBull = false
+float edgeBull = na
+if array.size(bTop) > 0
+    for k = array.size(bTop) - 1 to 0
+        bot = array.get(bBot, k)
+        top = array.get(bTop, k)
+        bool drop = false
+        if bar_index - array.get(bBar, k) > maxAge
+            drop := true
+        else if low <= top
+            if close < bot
+                drop := true
+            else
+                edgeBull := na(edgeBull) ? bot : math.max(edgeBull, bot)
+                if not array.get(bHit, k)
+                    retestBull := retestBull or (close > top and close > open)
+                    array.set(bHit, k, true)
+        if drop
+            bx = array.get(bBox, k)
+            if not na(bx)
+                box.set_right(bx, bar_index)
+            array.remove(bBot, k)
+            array.remove(bTop, k)
+            array.remove(bBar, k)
+            array.remove(bHit, k)
+            array.remove(bBox, k)
+while array.size(bTop) > 20
+    array.shift(bBot)
+    array.shift(bTop)
+    array.shift(bBar)
+    array.shift(bHit)
+    array.shift(bBox)
+
+bool retestBear = false
+float edgeBear = na
+if array.size(sTop) > 0
+    for k = array.size(sTop) - 1 to 0
+        bot = array.get(sBot, k)
+        top = array.get(sTop, k)
+        bool drop = false
+        if bar_index - array.get(sBar, k) > maxAge
+            drop := true
+        else if high >= bot
+            if close > top
+                drop := true
+            else
+                edgeBear := na(edgeBear) ? top : math.min(edgeBear, top)
+                if not array.get(sHit, k)
+                    retestBear := retestBear or (close < bot and close < open)
+                    array.set(sHit, k, true)
+        if drop
+            bx = array.get(sBox, k)
+            if not na(bx)
+                box.set_right(bx, bar_index)
+            array.remove(sBot, k)
+            array.remove(sTop, k)
+            array.remove(sBar, k)
+            array.remove(sHit, k)
+            array.remove(sBox, k)
+while array.size(sTop) > 20
+    array.shift(sBot)
+    array.shift(sTop)
+    array.shift(sBar)
+    array.shift(sHit)
+    array.shift(sBox)
+
+if low > high[2] and low - high[2] >= minGap * a
+    box nb = na
+    if showZones
+        nb := box.new(bar_index - 2, low, bar_index + maxAge, high[2], border_color=color.new(color.green, 70), bgcolor=color.new(color.green, 88))
+    array.push(bBot, high[2])
+    array.push(bTop, low)
+    array.push(bBar, bar_index)
+    array.push(bHit, false)
+    array.push(bBox, nb)
+if high < low[2] and low[2] - high >= minGap * a
+    box nb = na
+    if showZones
+        nb := box.new(bar_index - 2, low[2], bar_index + maxAge, high, border_color=color.new(color.red, 70), bgcolor=color.new(color.red, 88))
+    array.push(sBot, high)
+    array.push(sTop, low[2])
+    array.push(sBar, bar_index)
+    array.push(sHit, false)
+    array.push(sBox, nb)
+
+// ------------------------------------------------------------ rating
+f_ck(bool ok) => ok ? "[x] " : "[ ] "
+f_px(float p) => str.tostring(p, format.mintick)
+f_col(int r) => r >= 10 ? color.new(#0b8f3a, 0) : r >= 8 ? color.new(#2bb35a, 0) : r >= 6 ? color.new(#5aa7a0, 0) : color.new(color.gray, 20)
+
+htfUp = close > emaHtf
+locUp = close > ema50
+buyRating  = 2 + 2 * ((htfUp ? 1 : 0) + (locUp ? 1 : 0) + (atSup ? 1 : 0) + (roundSup ? 1 : 0))
+sellRating = 2 + 2 * ((not htfUp ? 1 : 0) + (not locUp ? 1 : 0) + (atRes ? 1 : 0) + (roundRes ? 1 : 0))
+
+buyStop  = math.min(edgeBull - 0.1 * a, close - 0.5 * a)
+buyTgt   = close + rr * (close - buyStop)
+sellStop = math.max(edgeBear + 0.1 * a, close + 0.5 * a)
+sellTgt  = close - rr * (sellStop - close)
+
+var float stopPx = na
+var float tgtPx = na
+var int entryBar = na
+
+if retestBull
+    tip = "BUY rating " + str.tostring(buyRating) + "/10" + (buyRating >= minRating ? "" : "  -> below your minimum, skip")
+    tip := tip + "\nEntry ~" + f_px(close) + "   Stop " + f_px(buyStop) + "   Target " + f_px(buyTgt)
+    tip := tip + "\n\nScored checks:\n" + f_ck(htfUp) + "Higher-timeframe trend up (EMA200)"
+    tip := tip + "\n" + f_ck(locUp) + "Local trend up (EMA50)"
+    tip := tip + "\n" + f_ck(atSup) + "At support (24h swing level)"
+    tip := tip + "\n" + f_ck(roundSup) + "At $10 round number"
+    tip := tip + "\n\nInfo only (no consistent edge in testing):\n" + f_ck(nearPdl) + "At previous-day low"
+    tip := tip + "\n" + f_ck(supStrength >= 2) + "Support touched 2+ times"
+    tip := tip + "\n" + f_ck(relVol >= 1.5) + "Volume >= 1.5x 20-candle average"
+    tip := tip + "\n" + f_ck(na(nextUp) or nextUp >= buyTgt) + "No level before target"
+    tip := tip + "\n" + f_ck(goodSession) + "London / New York session"
+    label.new(bar_index, low, "BUY " + str.tostring(buyRating), style=label.style_label_up, color=f_col(buyRating), textcolor=color.white, size=size.small, tooltip=tip)
+    if buyRating >= minRating and strategy.position_size == 0
+        stopPx := buyStop
+        tgtPx := buyTgt
+        entryBar := bar_index
+        strategy.entry("BUY", strategy.long)
+        strategy.exit("BUY exit", "BUY", stop=stopPx, limit=tgtPx)
+        alert("XAUUSD 15m BUY " + str.tostring(buyRating) + "/10 | entry ~" + f_px(close) + " | stop " + f_px(buyStop) + " | target " + f_px(buyTgt), alert.freq_once_per_bar_close)
+
+if retestBear and showSells
+    tip = "SELL rating " + str.tostring(sellRating) + "/10 (NOT validated)" + (sellRating >= minRating ? "" : "  -> below your minimum, skip")
+    tip := tip + "\nEntry ~" + f_px(close) + "   Stop " + f_px(sellStop) + "   Target " + f_px(sellTgt)
+    tip := tip + "\n\nScored checks:\n" + f_ck(not htfUp) + "Higher-timeframe trend down (EMA200)"
+    tip := tip + "\n" + f_ck(not locUp) + "Local trend down (EMA50)"
+    tip := tip + "\n" + f_ck(atRes) + "At resistance (24h swing level)"
+    tip := tip + "\n" + f_ck(roundRes) + "At $10 round number"
+    tip := tip + "\n\nInfo only:\n" + f_ck(nearPdh) + "At previous-day high"
+    tip := tip + "\n" + f_ck(resStrength >= 2) + "Resistance touched 2+ times"
+    tip := tip + "\n" + f_ck(relVol >= 1.5) + "Volume >= 1.5x 20-candle average"
+    tip := tip + "\n" + f_ck(na(nextDn) or nextDn <= sellTgt) + "No level before target"
+    tip := tip + "\n" + f_ck(goodSession) + "London / New York session"
+    label.new(bar_index, high, "SELL " + str.tostring(sellRating), style=label.style_label_down, color=sellRating >= minRating ? color.new(#c0392b, 0) : color.new(color.gray, 20), textcolor=color.white, size=size.small, tooltip=tip)
+    if sellRating >= minRating and strategy.position_size == 0
+        stopPx := sellStop
+        tgtPx := sellTgt
+        entryBar := bar_index
+        strategy.entry("SELL", strategy.short)
+        strategy.exit("SELL exit", "SELL", stop=stopPx, limit=tgtPx)
+        alert("XAUUSD 15m SELL " + str.tostring(sellRating) + "/10 (not validated) | entry ~" + f_px(close) + " | stop " + f_px(sellStop) + " | target " + f_px(sellTgt), alert.freq_once_per_bar_close)
+
+if strategy.position_size > 0
+    strategy.exit("BUY exit", "BUY", stop=stopPx, limit=tgtPx)
+    if bar_index - entryBar >= maxBars
+        strategy.close("BUY", comment="time")
+if strategy.position_size < 0
+    strategy.exit("SELL exit", "SELL", stop=stopPx, limit=tgtPx)
+    if bar_index - entryBar >= maxBars
+        strategy.close("SELL", comment="time")
+
+plot(strategy.position_size != 0 ? stopPx : na, "Stop", color=color.red, style=plot.style_linebr)
+plot(strategy.position_size != 0 ? tgtPx : na, "Target", color=color.green, style=plot.style_linebr)

@@ -170,6 +170,60 @@ mean a profitable trade. Reproduce with `research/candle_patterns.py` and
 this on real gold. Dukascopy throttles heavily: expect 503 errors and slow downloads, and
 re-run it to fill gaps.
 
+## 15-minute FVG retest signals (rated 1–10)
+
+This tested support/resistance, volume and fair value gaps (FVG) as verification checks
+(`research/confluence.py`). Same PAXG data as the candle-pattern research (Jun 2025 → Oct
+2026), tuned on 2025 and checked on 2026, $0.30/oz cost.
+
+**What did not work:**
+- **Scoring every signal by how many checks it passes.** On 5m, signals with 8+ of 10 checks
+  looked great in 2025 (47 % wins, +0.07R) and lost in 2026 (40 %, −0.05R). On 15m, 7–8
+  checks did *worse* than 5–6.
+- **Volume, session, previous-day high/low, level strength and "clear path to target".**
+  None of them helped consistently: each flipped between the two periods.
+- **5-minute signals.** Every setup lost money after costs.
+
+**What held up:** the **confirmed bullish FVG retest on 15m**. A bullish gap forms (candle 3's
+low is above candle 1's high, gap ≥ 0.25 ATR). Price returns into it for the first time within
+48 candles, and that candle closes bullish *above* the gap. It stays positive when the gap
+size and age settings are changed. In 2026, while gold fell and random long entries won only
+38.5 %, this setup still won 48 %. Four checks made it better in both periods:
+higher-timeframe trend (EMA200 on 15m ≈ EMA50 on 1H), local trend (EMA50), at a 24h
+swing support, at a $10 round number.
+
+**Rating = 2 + 2 × checks passed.** Stop is 0.1 ATR below the gap (min 0.5 ATR); target 1.5R.
+
+| Rating | Jun–Dec 2025 | 2026 |
+| --- | --- | --- |
+| 2–4 (0–1 checks): **skip** | 34 trades, 18 % wins, −0.60R | 35 trades, 40 % wins, −0.11R |
+| 6 | 76 trades, 45 %, +0.04R | 69 trades, 55 %, +0.29R |
+| 8 | 83 trades, 49 %, +0.15R | 106 trades, 45 %, +0.11R |
+| 10 | 25 trades, 52 %, +0.20R | 47 trades, 49 %, +0.20R |
+| **6 or higher** | **184 trades, 48 %, +0.11R** | **222 trades, 49 %, +0.19R** |
+
+Treat 6+ as "valid": the differences between 6, 8 and 10 are not reliable. With the
+higher-timeframe trend filter alone, the setup averaged about 4.8 trades a week, +0.67R a week
+at 1:1.5 (+0.83R at 1:2), and 41 % (53 % at 1:2) of weeks lost money.
+
+**Caveats:**
+- **The data is a proxy.** It's PAXG, not your broker's spot gold.
+- **It's a short history.** About 400 rated trades over 16 months.
+- **The edge is small.** It averages +0.1 to +0.2R per trade, so costs matter: at $0.40+/oz
+  spread it may disappear.
+- **Sell signals are not validated.** The mirrored bearish setup lost money in 2025, so they
+  are off by default.
+
+**Use it:**
+- `xauusd_fvg_signals.pine`: TradingView strategy for a XAUUSD **15m** chart. It draws the gaps,
+  labels every retest "BUY 2–10" (hover for the checklist, including the info-only checks:
+  previous-day low, volume, session, clear path) and trades only ratings ≥ your minimum (default
+  6). It runs a backtest on your broker's own data in the Strategy Tester. For alerts, create an
+  alert on the strategy with "alert() function calls only". It hasn't been compiled in
+  TradingView yet.
+- `python fvg_signals.py --live`: scans the last 30 days of live candles and lists signals with
+  entry, stop, target and checks. `--stats` prints the table above.
+
 ## Files
 
 | File | Purpose |
@@ -177,7 +231,10 @@ re-run it to fill gaps.
 | `strategy.py` | Indicators, signals, backtester and report (`python strategy.py --help`) |
 | `fetch_data.py` | Downloads gold (PAXG/USDT) candles, e.g. `--interval 5m`, to `data/` |
 | `fetch_dukascopy.py` | Downloads real spot XAU/USD from Dukascopy and builds 5m/15m/1h CSVs |
-| `research/` | Candle-pattern and sequence-mining studies |
+| `fvg_signals.py` | 15m FVG retest scanner with 1–10 rating (`--live`, `--stats`) |
+| `xauusd_fvg_signals.pine` | TradingView version of the FVG signals with checklist labels and alerts |
+| `test_signals.py` | No-look-ahead tests for the checks and signals |
+| `research/` | Candle-pattern, sequence-mining and confluence (S/R, volume, FVG) studies |
 | `xauusd_snapback.pine` | TradingView Pine v5 version with alerts. Use it on a XAUUSD **4H** chart. Set "Fixed target" = 2 for variant B |
 | `test_strategy.py` | Sanity tests (no look-ahead, consistent trades) |
 
@@ -190,5 +247,5 @@ python strategy.py                         # full report
 python strategy.py --cost 0.8              # stress-test costs
 python strategy.py --trades trades.csv     # export every trade
 python strategy.py --csv my_mt5_xauusd.csv # your broker export: time,open,high,low,close (UTC)
-python -m unittest test_strategy.py
+python -m unittest test_strategy.py test_signals.py
 ```

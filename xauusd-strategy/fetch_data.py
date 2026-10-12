@@ -6,7 +6,8 @@ Completed months come from Binance's monthly bulk archives (fast); the current m
 comes from the klines API.
 
 You can replace the output with your broker's XAUUSD export (MT4/MT5 etc.) as long as
-it has the columns: time,open,high,low,close (time in UTC).
+it has the columns: time,open,high,low,close (time in UTC). Output also carries volume
+(PAXG ounces traded) and trades (number of trades); strategy.py ignores both.
 """
 import argparse
 import csv
@@ -49,7 +50,7 @@ def fetch_month(interval: str, month: str) -> list:
         return []
     z = zipfile.ZipFile(io.BytesIO(raw))
     rows = csv.reader(io.TextIOWrapper(z.open(z.namelist()[0])))
-    return [(_seconds(int(k[0])), k[1], k[2], k[3], k[4]) for k in rows if k and k[0].isdigit()]
+    return [(_seconds(int(k[0])), k[1], k[2], k[3], k[4], k[5], k[8]) for k in rows if k and k[0].isdigit()]
 
 
 def fetch_api(interval: str, start_ms: int) -> list:
@@ -58,7 +59,7 @@ def fetch_api(interval: str, start_ms: int) -> list:
         batch = json.loads(_get(URL.format(interval, start_ms)))
         if not batch:
             break
-        rows += [(k[0] // 1000, k[1], k[2], k[3], k[4]) for k in batch]
+        rows += [(k[0] // 1000, k[1], k[2], k[3], k[4], k[5], k[8]) for k in batch]
         start_ms = batch[-1][0] + STEP_MS[interval]
         if len(batch) < 1000:
             break
@@ -93,9 +94,9 @@ def main() -> None:
             out.append(r)
     with open(a.out, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["time", "open", "high", "low", "close"])
-        for t, o, h, l, c in out:
-            w.writerow([datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d %H:%M"), o, h, l, c])
+        w.writerow(["time", "open", "high", "low", "close", "volume", "trades"])
+        for t, o, h, l, c, v, n in out:
+            w.writerow([datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d %H:%M"), o, h, l, c, v, n])
     print(f"wrote {len(out)} bars to {a.out}")
 
 

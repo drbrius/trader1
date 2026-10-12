@@ -58,5 +58,9 @@ plot(strategy.position_size != 0 ? stopPx : na, "Stop", color=color.red, style=p
 plotshape(longSig  and strategy.position_size == 0, "Long setup",  shape.triangleup,   location.belowbar, color.green, size=size.small)
 plotshape(shortSig and strategy.position_size == 0, "Short setup", shape.triangledown, location.abovebar, color.red,   size=size.small)
 
-alertcondition(longSig,  "XAUUSD long setup",  "XAUUSD 4H: RSI(2) < 5 above EMA50 -> buy next open")
-alertcondition(shortSig, "XAUUSD short setup", "XAUUSD 4H: RSI(2) > 95 below EMA50 -> sell next open")
+// alert() works in strategies (alertcondition() does not): create the alert with
+// condition "XAUUSD Snap-Back (4H)" -> "alert() function calls only".
+if longSig
+    alert("XAUUSD 4H long setup: RSI(2) < 5 above EMA50 -> buy next open", alert.freq_once_per_bar_close)
+if shortSig
+    alert("XAUUSD 4H short setup: RSI(2) > 95 below EMA50 -> sell next open", alert.freq_once_per_bar_close)
