@@ -93,6 +93,40 @@ promises 60 %+ at 1:2 without trade-by-trade proof on unseen data.
 (+0.24 R). Losing streaks of 6 or more are normal in B, so size it at ≤ 1 % risk per trade.
 In B, longs did better (45.6 % wins, +0.35 R) than shorts (37.5 %, +0.11 R).
 
+## Intraday research (15-minute chart, 2–3 trades a day)
+
+I tested a 2–3 trades/day version on 15-minute candles, 2021 → Oct 2026. Rules for the test:
+- **Hours:** weekend bars removed, since spot gold is closed Friday 21:00 to Sunday 22:00 UTC.
+- **Overnight:** every trade closed by 20:45 UTC.
+- **Exits:** fixed stop and target; if a candle touches both, the stop counts as hit first.
+
+Setups tested, 144 combinations in total:
+- **Session opening-range breakout:** a break of the first 30 or 60 minutes' range at the London open (07:00 UTC) or New York open (13:30 UTC).
+- **Asian-range breakout:** a break of the 00:00–07:00 UTC range during the London session.
+- **Trend pullback:** RSI(2) dips or spikes during 07:00–20:00 UTC in the direction of the 1-hour trend.
+- **Settings:** stops of 1, 1.5 or 2 × ATR, or based on the range; targets at 1:1, 1:1.5, 1:2 and 1:3.
+
+**Result: none of the 144 combinations made money in both periods with $0.40/oz costs.**
+The best signal (pullback, RSI(2) < 10 / > 90, 1 ATR stop, 1:1.5 target, ~1.9 trades/day)
+has a small edge **before costs**, but intraday stops are only $2–8 wide, so the spread
+takes most of it:
+
+| Round-trip cost per oz | Win rate | Expectancy | R per week | Losing weeks |
+| --- | --- | --- | --- | --- |
+| $0.00 | 45 % | +0.12 R | +1.16 R | 40 % |
+| $0.10 (raw-spread ECN) | 45 % | +0.09 R | +0.87 R | 44 % |
+| $0.20 | 45 % | +0.06 R | +0.58 R | 45 % |
+| $0.40 (typical retail) | 45 % | +0.00 R | +0.01 R | 54 % |
+
+Even at $0.10 that is roughly **0.9 % a week at 1 % risk per trade**, and almost half of all
+weeks lose money. 5 % a week would need ~5–6 % risk per trade, which a normal losing streak
+would destroy. The 5-minute chart would be worse still: stops get smaller while the spread
+stays the same. Spreads and costs decide intraday gold trading, so measure your broker's
+real cost per trade before trusting any intraday backtest. These numbers use PAXG data, and
+its intraday price action is not identical to spot XAU/USD.
+
+Download intraday data with `python fetch_data.py --interval 15m --start 2021-01-01`.
+
 ## Files
 
 | File | Purpose |
