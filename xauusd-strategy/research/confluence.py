@@ -99,6 +99,10 @@ def fair_value_gaps(b: pd.DataFrame, A: pd.Series, min_size: float = 0.25, max_a
     out = {k: np.zeros(n, bool) for k in ["in_bull", "in_bear", "retest_bull", "retest_bear",
                                           "retest_bull_conf", "retest_bear_conf"]}
     edge_bull, edge_bear = np.full(n, np.nan), np.full(n, np.nan)
+    # size (ATR), age (candles) and depth (0 = touched the top edge, 1 = reached the bottom)
+    # of the gap behind each confirmed first retest
+    info = {k: np.full(n, np.nan) for k in ["bull_size", "bull_age", "bull_depth",
+                                            "bear_size", "bear_age", "bear_depth"]}
     bulls, bears = [], []  # [bottom, top, created_bar, touched]
     for i in range(2, n):
         keep = []
@@ -112,7 +116,11 @@ def fair_value_gaps(b: pd.DataFrame, A: pd.Series, min_size: float = 0.25, max_a
                 edge_bull[i] = z[0] if np.isnan(edge_bull[i]) else max(edge_bull[i], z[0])
                 if not z[3]:
                     out["retest_bull"][i] = True
-                    out["retest_bull_conf"][i] |= (c[i] > z[1]) and (c[i] > o[i])
+                    if (c[i] > z[1]) and (c[i] > o[i]) and not out["retest_bull_conf"][i]:
+                        out["retest_bull_conf"][i] = True
+                        info["bull_size"][i] = (z[1] - z[0]) / at[i]
+                        info["bull_age"][i] = i - z[2]
+                        info["bull_depth"][i] = min(1.0, (z[1] - l[i]) / (z[1] - z[0]))
                     z[3] = True
             keep.append(z)
         bulls = keep[-20:]
@@ -127,7 +135,11 @@ def fair_value_gaps(b: pd.DataFrame, A: pd.Series, min_size: float = 0.25, max_a
                 edge_bear[i] = z[1] if np.isnan(edge_bear[i]) else min(edge_bear[i], z[1])
                 if not z[3]:
                     out["retest_bear"][i] = True
-                    out["retest_bear_conf"][i] |= (c[i] < z[0]) and (c[i] < o[i])
+                    if (c[i] < z[0]) and (c[i] < o[i]) and not out["retest_bear_conf"][i]:
+                        out["retest_bear_conf"][i] = True
+                        info["bear_size"][i] = (z[1] - z[0]) / at[i]
+                        info["bear_age"][i] = i - z[2]
+                        info["bear_depth"][i] = min(1.0, (h[i] - z[0]) / (z[1] - z[0]))
                     z[3] = True
             keep.append(z)
         bears = keep[-20:]
@@ -137,6 +149,8 @@ def fair_value_gaps(b: pd.DataFrame, A: pd.Series, min_size: float = 0.25, max_a
             bears.append([h[i], l[i - 2], i, False])
     df = pd.DataFrame(out, index=b.index)
     df["edge_bull"], df["edge_bear"] = edge_bull, edge_bear
+    for k, v in info.items():
+        df[k] = v
     return df
 
 
