@@ -127,12 +127,57 @@ its intraday price action is not identical to spot XAU/USD.
 
 Download intraday data with `python fetch_data.py --interval 15m --start 2021-01-01`.
 
+## Candle-pattern research (5-minute and 15-minute charts)
+
+**Question:** do candle patterns on 5m/15m gold repeat reliably enough to give buy/sell signals
+with a 1–10 quality rating?
+
+**Data:** PAXG candles from Jun 2025 → Oct 2026, weekend hours removed. Before mid-2025, PAXG
+was quoted in whole dollars with ~15 trades per 5-minute candle (21 % of candles had zero
+range in 2023), so earlier candle shapes are meaningless. Tuned on Jun–Dec 2025 and checked
+on 2026. Each signal: entry at the next open, stop 1 × ATR, target 1.5R, $0.30/oz cost.
+
+**What was tested:**
+- **20 classic patterns:** hammer, shooting star, engulfing, piercing / dark cloud, tweezers,
+  inside-bar breaks, outside bars, morning / evening star, three soldiers / crows, marubozu,
+  and sweep-and-reclaim of the 20-bar low or high.
+- **Every 2- and 3-candle sequence** of 18 candle shapes (direction × body size × where
+  the candle closed).
+- **Context:** trend, higher-timeframe trend, at a 20-bar high/low, RSI extreme, session.
+
+**Results:**
+
+| | 5-minute | 15-minute |
+| --- | --- | --- |
+| Random entry, win rate at 1:1.5 | 40.6 % | 40.5 % |
+| Classic patterns, win rate range (2025 → 2026) | 38–45 % → 37–44 % | 34–48 % → 36–44 % |
+| Patterns profitable after costs in **both** periods | 0 of 20 | 1 of 20 (morning star, n≈150–200; with 20 tries, 1 hit is expected by chance) |
+| Data-mined sequences strong in 2025 that held in 2026 | 1 of 3 (edge 0.05 ATR < 0.09 ATR cost) | 0 |
+| Correlation of a sequence's 2025 result with its 2026 result | −0.17 to +0.11 | +0.20 to +0.22 |
+
+The only context that helped in both periods was trading **with the higher-timeframe trend**
+(+1 to +2 percentage points). A combined context score (higher-timeframe trend + local trend +
+at a 20-bar extreme + London/NY session) raised the 5m win rate by about 1 point per point of
+score. Every score level still lost money after costs, except a 4-point group too small to
+trust (33 and 57 trades).
+
+**Conclusion:** on 5m/15m gold, candle shapes don't repeat in a way that predicts the next
+move by more than the spread. A 1–10 rating built on them would look precise but would not
+mean a profitable trade. Reproduce with `research/candle_patterns.py` and
+`research/mine_sequences.py`.
+
+`fetch_dukascopy.py` downloads real spot XAU/USD 1-minute data from Dukascopy, to re-check
+this on real gold. Dukascopy throttles heavily: expect 503 errors and slow downloads, and
+re-run it to fill gaps.
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
 | `strategy.py` | Indicators, signals, backtester and report (`python strategy.py --help`) |
-| `fetch_data.py` | Downloads hourly gold (PAXG/USDT) data to `data/xauusd_1h.csv` |
+| `fetch_data.py` | Downloads gold (PAXG/USDT) candles, e.g. `--interval 5m`, to `data/` |
+| `fetch_dukascopy.py` | Downloads real spot XAU/USD from Dukascopy and builds 5m/15m/1h CSVs |
+| `research/` | Candle-pattern and sequence-mining studies |
 | `xauusd_snapback.pine` | TradingView Pine v5 version with alerts. Use it on a XAUUSD **4H** chart. Set "Fixed target" = 2 for variant B |
 | `test_strategy.py` | Sanity tests (no look-ahead, consistent trades) |
 
