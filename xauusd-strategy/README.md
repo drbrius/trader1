@@ -65,13 +65,41 @@ which is why the average loss is ~0.5 R and not 1 R.
 7. **Intraday (1H) version tested worse:** about 61 % wins out of sample with weaker
    profit, so 4H is the recommended timeframe.
 
+## Variant B: fixed 1:2 risk/reward
+
+Same entries, but every trade ends at **−1R** (stop, 2 × ATR) or **+2R** (take-profit at
+2 × the risk). No EMA exit and no time limit.
+
+```bash
+python strategy.py --target-rr 2 --stop-atr 2 --max-bars 100000
+```
+
+| Period | Trades | Win rate | Profit factor | Expectancy | Max DD | Worst losing streak |
+| --- | --- | --- | --- | --- | --- | --- |
+| All 2021–2026 | 105 | 41.9 % | 1.41 | **+0.24 R** | 6.1 R | 6 |
+| In-sample 2021–23 | 53 | 37.7 % | 1.18 | +0.11 R | 6.1 R | 6 |
+| Out-of-sample 2024–26 | 52 | 46.2 % | 1.69 | +0.37 R | 4.0 R | 4 |
+
+**Why not 60 % at 1:2?** I tested 46 combinations of entry type (RSI pullback, breakout,
+EMA touch, RSI reversal, EMA cross), timeframe (1H/4H/1D) and stop width (1–3 ATR). All
+used a fixed 1R stop and 2R target. None reached 60 % wins in both periods. The best were
+55 % in-sample and 56 % out-of-sample, and never the same setup. Getting 60 % at 1:2 would
+mean +0.8 R per trade. On random price moves a 2R target is hit before a 1R stop only
+about **33 %** of the time, so 42–46 % is already a real edge. Be wary of anyone who
+promises 60 %+ at 1:2 without trade-by-trade proof on unseen data.
+
+**A vs B:** Variant A wins more often (72 %) and has smaller drawdowns, but makes only
++0.12 R per trade. Variant B wins less often (42 %) but makes about twice as much per trade
+(+0.24 R). Losing streaks of 6 or more are normal in B, so size it at ≤ 1 % risk per trade.
+In B, longs did better (45.6 % wins, +0.35 R) than shorts (37.5 %, +0.11 R).
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
 | `strategy.py` | Indicators, signals, backtester and report (`python strategy.py --help`) |
 | `fetch_data.py` | Downloads hourly gold (PAXG/USDT) data to `data/xauusd_1h.csv` |
-| `xauusd_snapback.pine` | TradingView Pine v5 version with alerts. Use it on a XAUUSD **4H** chart |
+| `xauusd_snapback.pine` | TradingView Pine v5 version with alerts. Use it on a XAUUSD **4H** chart. Set "Fixed target" = 2 for variant B |
 | `test_strategy.py` | Sanity tests (no look-ahead, consistent trades) |
 
 ## How to run

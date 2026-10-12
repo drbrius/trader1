@@ -1,6 +1,7 @@
 //@version=5
 // XAU/USD Snap-Back: RSI(2) pullback in the direction of the trend.
 // Apply to a XAUUSD chart on the 4-hour timeframe. Not financial advice.
+// 1:2 variant: set "Fixed target" = 2 and "Max bars in trade" = 100000.
 strategy("XAUUSD Snap-Back (4H)", overlay=true, pyramiding=0,
      default_qty_type=strategy.fixed, default_qty_value=1,
      process_orders_on_close=false, calc_on_every_tick=false)
@@ -13,6 +14,7 @@ stopAtr    = input.float(2.0, "Stop (x ATR)")
 exitLen    = input.int(5,   "Exit EMA")
 maxBars    = input.int(30,  "Max bars in trade")
 allowShort = input.bool(true, "Allow shorts")
+targetRR   = input.float(0, "Fixed target (x risk), 0 = EMA exit", minval=0)
 
 trend = ta.ema(close, trendLen)
 exitE = ta.ema(close, exitLen)
@@ -40,12 +42,14 @@ if strategy.position_size != 0 and bar_index == entryBar + 1
     stopPx := strategy.position_size > 0 ? strategy.position_avg_price - stopAtr * a[1] : strategy.position_avg_price + stopAtr * a[1]
 
 if strategy.position_size > 0
-    strategy.exit("L-stop", "L", stop=stopPx)
-    if close > exitE or bar_index - entryBar >= maxBars
+    risk = strategy.position_avg_price - stopPx
+    strategy.exit("L-stop", "L", stop=stopPx, limit=targetRR > 0 ? strategy.position_avg_price + targetRR * risk : na)
+    if (targetRR == 0 and close > exitE) or bar_index - entryBar >= maxBars
         strategy.close("L")
 if strategy.position_size < 0
-    strategy.exit("S-stop", "S", stop=stopPx)
-    if close < exitE or bar_index - entryBar >= maxBars
+    risk = stopPx - strategy.position_avg_price
+    strategy.exit("S-stop", "S", stop=stopPx, limit=targetRR > 0 ? strategy.position_avg_price - targetRR * risk : na)
+    if (targetRR == 0 and close < exitE) or bar_index - entryBar >= maxBars
         strategy.close("S")
 
 plot(trend, "Trend EMA", color=color.orange, linewidth=2)

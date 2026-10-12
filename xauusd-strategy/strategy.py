@@ -9,6 +9,9 @@ Rules (all on 4-hour candles, signals evaluated on the CLOSE of a bar):
   Stop  : entry -/+ 2 x ATR(14) (ATR of the signal bar), placed immediately
   Exit  : on the first 4H close back above EMA(5) (long) / below EMA(5) (short)
   Time  : close the trade after 30 bars (5 days) if neither stop nor exit hit
+
+1:2 variant (--target-rr 2 --stop-atr 3 --max-bars 60): same entries, stop 3 x ATR,
+fixed take-profit at 2 x the risk, time stop 60 bars (10 days).
   One position at a time, no pyramiding.
 
 Usage:
@@ -37,6 +40,7 @@ class Params:
     stop_atr: float = 2.0
     exit_ema: int = 5
     max_bars: int = 30
+    target_rr: float | None = None  # fixed take-profit at N x risk; None = EMA exit
     cost: float = 0.40         # round-trip spread + slippage in USD per ounce
     allow_shorts: bool = True
 
@@ -108,6 +112,7 @@ def backtest(df: pd.DataFrame, p: Params = Params()) -> pd.DataFrame:
         entry = o[i + 1]
         risk = p.stop_atr * a[i]
         stop = entry - side * risk
+        target = entry + side * p.target_rr * risk if p.target_rr else None
         exit_px = reason = None
         j = i + 1
         while j < len(b):
@@ -115,7 +120,9 @@ def backtest(df: pd.DataFrame, p: Params = Params()) -> pd.DataFrame:
                 exit_px, reason = min(stop, o[j]), "stop"
             elif side == -1 and h[j] >= stop:
                 exit_px, reason = max(stop, o[j]), "stop"
-            elif (side == 1 and c[j] > x[j]) or (side == -1 and c[j] < x[j]):
+            elif target is not None and ((side == 1 and h[j] >= target) or (side == -1 and l[j] <= target)):
+                exit_px, reason = target, "target"
+            elif target is None and ((side == 1 and c[j] > x[j]) or (side == -1 and c[j] < x[j])):
                 exit_px, reason = c[j], "target"
             elif j - i >= p.max_bars:
                 exit_px, reason = c[j], "time"
@@ -163,10 +170,14 @@ def main() -> None:
     ap.add_argument("--split", default="2024-01-01", help="in-sample / out-of-sample boundary")
     ap.add_argument("--cost", type=float, default=Params.cost)
     ap.add_argument("--long-only", action="store_true")
+    ap.add_argument("--target-rr", type=float, help="fixed take-profit at N x risk (e.g. 2 for 1:2) instead of EMA exit")
+    ap.add_argument("--stop-atr", type=float, default=Params.stop_atr)
+    ap.add_argument("--max-bars", type=int, default=Params.max_bars)
     ap.add_argument("--trades", help="write the trade list to this CSV")
     a = ap.parse_args()
 
-    p = Params(cost=a.cost, allow_shorts=not a.long_only)
+    p = Params(cost=a.cost, allow_shorts=not a.long_only, target_rr=a.target_rr,
+               stop_atr=a.stop_atr, max_bars=a.max_bars)
     df = load(a.csv)
     df = df[df.index >= a.start]
     pd.set_option("display.width", 160)
