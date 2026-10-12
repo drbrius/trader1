@@ -1,0 +1,58 @@
+//@version=5
+// XAU/USD Snap-Back: RSI(2) pullback in the direction of the trend.
+// Apply to a XAUUSD chart on the 4-hour timeframe. Not financial advice.
+strategy("XAUUSD Snap-Back (4H)", overlay=true, pyramiding=0,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     process_orders_on_close=false, calc_on_every_tick=false)
+
+trendLen   = input.int(50,  "Trend EMA")
+rsiLen     = input.int(2,   "RSI length")
+rsiExtreme = input.float(5, "RSI extreme (long < x, short > 100-x)")
+atrLen     = input.int(14,  "ATR length")
+stopAtr    = input.float(2.0, "Stop (x ATR)")
+exitLen    = input.int(5,   "Exit EMA")
+maxBars    = input.int(30,  "Max bars in trade")
+allowShort = input.bool(true, "Allow shorts")
+
+trend = ta.ema(close, trendLen)
+exitE = ta.ema(close, exitLen)
+r     = ta.rsi(close, rsiLen)
+a     = ta.atr(atrLen)
+
+longSig  = close > trend and r < rsiExtreme
+shortSig = allowShort and close < trend and r > 100 - rsiExtreme
+
+var float stopPx = na
+var int   entryBar = na
+
+if strategy.position_size == 0
+    if longSig
+        strategy.entry("L", strategy.long)
+        stopPx := close - stopAtr * a   // approximated from signal close; refined below
+        entryBar := bar_index
+    else if shortSig
+        strategy.entry("S", strategy.short)
+        stopPx := close + stopAtr * a
+        entryBar := bar_index
+
+// Re-anchor the stop on the actual fill price once in the trade.
+if strategy.position_size != 0 and bar_index == entryBar + 1
+    stopPx := strategy.position_size > 0 ? strategy.position_avg_price - stopAtr * a[1] : strategy.position_avg_price + stopAtr * a[1]
+
+if strategy.position_size > 0
+    strategy.exit("L-stop", "L", stop=stopPx)
+    if close > exitE or bar_index - entryBar >= maxBars
+        strategy.close("L")
+if strategy.position_size < 0
+    strategy.exit("S-stop", "S", stop=stopPx)
+    if close < exitE or bar_index - entryBar >= maxBars
+        strategy.close("S")
+
+plot(trend, "Trend EMA", color=color.orange, linewidth=2)
+plot(exitE, "Exit EMA",  color=color.gray)
+plot(strategy.position_size != 0 ? stopPx : na, "Stop", color=color.red, style=plot.style_linebr)
+plotshape(longSig  and strategy.position_size == 0, "Long setup",  shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(shortSig and strategy.position_size == 0, "Short setup", shape.triangledown, location.abovebar, color.red,   size=size.small)
+
+alertcondition(longSig,  "XAUUSD long setup",  "XAUUSD 4H: RSI(2) < 5 above EMA50 -> buy next open")
+alertcondition(shortSig, "XAUUSD short setup", "XAUUSD 4H: RSI(2) > 95 below EMA50 -> sell next open")

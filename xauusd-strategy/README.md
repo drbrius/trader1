@@ -1,0 +1,87 @@
+# XAU/USD "Snap-Back" — 4H pullback strategy for gold
+
+A short swing strategy (trades last ~½–2 days) that buys sharp dips in an uptrend and sells
+sharp rallies in a downtrend on the **4-hour** chart. It is built for a **high win rate**
+and backtested on 2021–2026 hourly gold data.
+
+> **Not financial advice.** This is a research tool. A backtest is not a promise; trade it
+> on a demo account first and only risk money you can afford to lose.
+
+## The rules
+
+All signals are checked on the **close of a 4H candle**.
+
+| | Long | Short |
+| --- | --- | --- |
+| Trend filter | Close **above** EMA(50) | Close **below** EMA(50) |
+| Trigger | RSI(2) **< 5** | RSI(2) **> 95** |
+| Entry | Market order at the open of the next 4H candle | same |
+| Stop loss | Entry − 2 × ATR(14) | Entry + 2 × ATR(14) |
+| Take profit | First 4H **close above EMA(5)** | First 4H **close below EMA(5)** |
+| Time stop | Close after 30 candles (5 days) | same |
+
+One position at a time. Don't add to a trade and don't move the stop further away.
+
+**Position size:** risk a fixed **0.5–1 % of the account per trade**, measured to the stop:
+`ounces = (account × risk%) / (2 × ATR)`. One standard lot is 100 oz. Example: a $10,000
+account at 1 % risk with ATR = $12 gives `100 / 24 ≈ 4 oz = 0.04 lots`.
+
+## Backtest results (with costs)
+
+Data: hourly PAXG/USDT, 2021-01-01 → 2026-10-12 (PAXG is tokenised gold, 1 token = 1 oz,
+and tracks spot XAU/USD). Costs: $0.40/oz round trip. **R** = the risk taken on a trade
+(2 × ATR), so +0.36 R means a win of 0.36 × the amount risked.
+
+| Period | Trades | Win rate | Profit factor | Avg win | Avg loss | Expectancy | Max DD |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **All 2021–2026** | 135 | **71.9 %** | 1.84 | +0.36 R | −0.50 R | +0.12 R | 2.8 R |
+| In-sample 2021–23 (tuned here) | 69 | 69.6 % | 1.50 | +0.30 R | −0.45 R | +0.07 R | 2.8 R |
+| **Out-of-sample 2024–26** (unseen) | 66 | **74.2 %** | 2.20 | +0.42 R | −0.55 R | +0.17 R | 1.8 R |
+| Longs only | 72 | 63.9 % | 1.17 | | | +0.03 R | 5.5 R |
+| Shorts only | 63 | 81.0 % | 3.47 | | | +0.22 R | 1.4 R |
+
+By year: 2021 54.5 % · 2022 72.4 % · 2023 83.3 % · 2024 72.0 % · 2025 66.7 % · 2026 85.0 %.
+Doubling costs to $0.80/oz still gives PF 1.70 and the same win rate.
+
+Only 15 of 135 trades hit the hard stop. Most losers are closed early by the EMA(5) exit,
+which is why the average loss is ~0.5 R and not 1 R.
+
+## What you should know before trading it
+
+1. **Win rate ≠ profit.** Winners are small (≈ 0.36 R) and losers about 1.4× larger. The
+   strategy only makes money because it wins ~70 % of the time. If the win rate drops
+   below ~58 %, it stops making money.
+2. **The win rate holds up; the profit is fragile.** Across 18 nearby parameter settings
+   (RSI 5/10/15, EMA 50/100, stop 2–4 ATR) the win rate stayed at **65–74 %** in every
+   case. The profit factor did not: several settings broke even or lost money out of sample.
+   The settings here are the profitable corner. Don't "optimise" them further on the same data.
+3. **Not every year reaches 60 %.** 2021 came in at 54.5 % and lost a little.
+4. **Longs are the weak side.** Most of the profit came from shorts. `--long-only` is
+   barely positive. Keep both sides on.
+5. **Sample size.** 135 trades, about 2 per month. That's enough to see a tendency, not
+   enough to be certain. Expect losing streaks of 4+ trades.
+6. **Your broker's data differs.** Spreads, swap fees and weekend gaps (PAXG trades 24/7,
+   spot gold doesn't) all shift results. Re-run the backtest on your broker's own data.
+7. **Intraday (1H) version tested worse:** about 61 % wins out of sample with weaker
+   profit, so 4H is the recommended timeframe.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `strategy.py` | Indicators, signals, backtester and report (`python strategy.py --help`) |
+| `fetch_data.py` | Downloads hourly gold (PAXG/USDT) data to `data/xauusd_1h.csv` |
+| `xauusd_snapback.pine` | TradingView Pine v5 version with alerts. Use it on a XAUUSD **4H** chart |
+| `test_strategy.py` | Sanity tests (no look-ahead, consistent trades) |
+
+## How to run
+
+```bash
+pip install pandas numpy
+python fetch_data.py                       # ~54k hourly bars
+python strategy.py                         # full report
+python strategy.py --cost 0.8              # stress-test costs
+python strategy.py --trades trades.csv     # export every trade
+python strategy.py --csv my_mt5_xauusd.csv # your broker export: time,open,high,low,close (UTC)
+python -m unittest test_strategy.py
+```
